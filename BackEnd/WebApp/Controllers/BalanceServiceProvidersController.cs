@@ -1,11 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using WebApp.Context;
+using Newtonsoft.Json;
+using System.Net;
+using System.Transactions;
+using WebApp.Helpers;
 using WebApp.Models;
 
 namespace WebApp.Controllers
@@ -14,95 +12,125 @@ namespace WebApp.Controllers
     [ApiController]
     public class BalanceServiceProvidersController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly string connectionString = string.Empty;
+        private readonly IHandleServiceProviders _mapping;
 
-        public BalanceServiceProvidersController(AppDbContext context)
+        public BalanceServiceProvidersController( IConfiguration configuration, IHandleServiceProviders mapping)
         {
-            _context = context;
+            _mapping = mapping;
+            connectionString = configuration.GetConnectionString("EndpointEsett");
         }
 
-        // GET: api/BalanceServiceProviders
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<BalanceServiceProviders>>> GetBalanceServiceProviders()
-        {
-            return await _context.BalanceServiceProviders.ToListAsync();
-        }
 
         // GET: api/BalanceServiceProviders/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<BalanceServiceProviders>> GetBalanceServiceProviders(int id)
+        public async Task<ActionResult<BalanceServiceProviders>> GetBalanceServiceProviders(Guid id)
         {
-            var balanceServiceProviders = await _context.BalanceServiceProviders.FindAsync(id);
-
-            if (balanceServiceProviders == null)
-            {
-                return NotFound();
-            }
-
-            return balanceServiceProviders;
-        }
-
-        // PUT: api/BalanceServiceProviders/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutBalanceServiceProviders(int id, BalanceServiceProviders balanceServiceProviders)
-        {
-            if (id != balanceServiceProviders.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(balanceServiceProviders).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
+                return _mapping.BalanceServiceProvidersById(id);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception)
             {
-                if (!BalanceServiceProvidersExists(id))
+
+                throw new Exception("An error has occurred with your request");
+            }
+           
+        }
+
+
+        [HttpPut]
+        public async Task<IActionResult> PutBalanceServiceProviders(BalanceServiceProviders balance)
+        {
+            using (TransactionScope scope = new TransactionScope())
+            {
+                try
                 {
-                    return NotFound();
+                    _mapping.UpdateBalanceServiceProvidersById(balance);
+                    scope.Complete();
+                    return Ok("Transaction executed successfully");
                 }
-                else
+                catch (Exception)
                 {
-                    throw;
+
+                    throw new Exception("An error has occurred with your request");
                 }
             }
+            
 
-            return NoContent();
         }
 
         // POST: api/BalanceServiceProviders
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<BalanceServiceProviders>> PostBalanceServiceProviders(BalanceServiceProviders balanceServiceProviders)
+        public async Task<ActionResult<List<BalanceServiceProviders>>> PostBalanceServiceProviders()
         {
-            _context.BalanceServiceProviders.Add(balanceServiceProviders);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetBalanceServiceProviders", new { id = balanceServiceProviders.Id }, balanceServiceProviders);
-        }
-
-        // DELETE: api/BalanceServiceProviders/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteBalanceServiceProviders(int id)
-        {
-            var balanceServiceProviders = await _context.BalanceServiceProviders.FindAsync(id);
-            if (balanceServiceProviders == null)
+            using (TransactionScope scope = new TransactionScope())
             {
-                return NotFound();
+                List<BalanceServiceProviders> dataResult = new List<BalanceServiceProviders>();
+                try
+                {
+                    HttpClient client = new HttpClient();
+
+
+                    var httpReponse = await client.GetAsync(connectionString + "?country=FI");
+                    var statusCode = httpReponse.StatusCode == HttpStatusCode.OK ? 200 : 400;
+
+                    if (statusCode == 200)
+                    {
+                        var responseBody = await httpReponse.Content.ReadAsStringAsync();
+
+                        dataResult = JsonConvert.DeserializeObject<List<BalanceServiceProviders>>(responseBody);
+
+                        foreach (var item in dataResult)
+                        {
+
+                            _mapping.BalanceServiceProviders(item);
+
+                        }
+
+                    }
+                    else
+                    {
+                        return BadRequest();
+                    }
+
+                    scope.Complete();
+                    return Ok(dataResult);
+                }
+                catch (Exception)
+                {
+                    scope.Dispose();
+                    throw new Exception("An error has occurred with your request");
+                }
+
+
             }
 
-            _context.BalanceServiceProviders.Remove(balanceServiceProviders);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
         }
 
-        private bool BalanceServiceProvidersExists(int id)
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteBalanceServiceProviders(Guid id)
         {
-            return _context.BalanceServiceProviders.Any(e => e.Id == id);
+            using (TransactionScope scope = new TransactionScope())
+            {
+
+                try
+                {
+                    _mapping.DeleteBalanceServiceProvidersById(id);
+                    scope.Complete();
+                    return Ok("Transaction executed successfully");
+                }
+                catch (Exception)
+                {
+
+                    scope.Dispose();
+                    throw new Exception("An error has occurred with your request");
+                }
+
+
+            }
         }
+
+       
     }
 }

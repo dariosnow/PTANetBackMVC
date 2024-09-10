@@ -2,7 +2,7 @@
 {
     public class BalanceServiceProviders
     {
-        public int Id { get; set; }
+        public Guid Id { get; set; }
         public string BspCode { get; set; }
         public string BspName { get; set; }
         public string BusinessId { get; set; }
